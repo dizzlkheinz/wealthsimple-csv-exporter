@@ -22,7 +22,7 @@ A simple bookmarklet to export your Wealthsimple transaction history to CSV form
    - Firefox: Press `Ctrl+Shift+B` (Windows) or `Cmd+Shift+B` (Mac)
    - Safari: `View` → `Show Favorites Bar`
 
-2. **Copy the below link and drag in to your bookmarks bar:**
+2. **Select the below link and drag in to your bookmarks bar:**
 
 
 ```
