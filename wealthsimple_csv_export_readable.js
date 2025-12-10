@@ -1,6 +1,7 @@
 javascript:(function(){
-    /* 
+    /*
      * Wealthsimple Transaction Export Bookmarklet
+     * Version: 0.1.0
      * Features:
      * - Exports to CSV (Date, Payee, Amount)
      * - Formats Date as YYYY-MM-DD (compatible with YNAB/Excel)
@@ -117,7 +118,32 @@ javascript:(function(){
 
     // Final Step: Export or Alert
     if (rows.length === 0) {
-        alert("No completed transactions found.\n\nTip: Scroll down to load more transactions before clicking.");
+        const diagnostics = {
+            h2Count: document.querySelectorAll('h2').length,
+            privacyAttrCount: document.querySelectorAll('[data-fs-privacy-rule]').length,
+            dollarSignCount: (document.body.innerText.match(/\$/g) || []).length,
+            url: window.location.href
+        };
+
+        let message = "No completed transactions found.\n\n";
+
+        if (!diagnostics.url.includes('wealthsimple.com')) {
+            message += "⚠️ You don't appear to be on Wealthsimple.\nNavigate to my.wealthsimple.com/activity first.";
+        } else if (diagnostics.dollarSignCount === 0) {
+            message += "⚠️ No dollar amounts found on page.\nMake sure you're on the Activity page.";
+        } else if (diagnostics.privacyAttrCount === 0) {
+            message += "⚠️ Page structure may have changed.\n\n" +
+                       "Diagnostics:\n" +
+                       `• H2 headers: ${diagnostics.h2Count}\n` +
+                       `• Dollar signs on page: ${diagnostics.dollarSignCount}\n\n` +
+                       "Please report this issue at:\ngithub.com/dizzlkheinz/wealthsimple-csv-exporter/issues";
+        } else {
+            message += "Tip: Scroll down to load more transactions before clicking.\n\n" +
+                       "If transactions are visible but not exporting, " +
+                       "please report at:\ngithub.com/dizzlkheinz/wealthsimple-csv-exporter/issues";
+        }
+
+        alert(message);
     } else {
         const csvContent = "Date,Payee,Amount\n" + rows.join("\n");
         const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -129,5 +155,6 @@ javascript:(function(){
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        URL.revokeObjectURL(url);
     }
 })();
