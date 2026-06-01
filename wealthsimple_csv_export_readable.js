@@ -1,13 +1,15 @@
 javascript: (() => {
 	/*
 	 * Wealthsimple Transaction Export Bookmarklet
-	 * Version: 0.2.0
+	 * Version: 0.2.3
 	 * Features:
 	 * - Exports to CSV (Date, Payee, Amount)
 	 * - Formats Date as YYYY-MM-DD (compatible with YNAB/Excel)
 	 * - Skips "Pending" transactions
 	 * - Handles "Today"/"Yesterday" and standard dates
-	 * - Parses transaction rows directly from innerText (no fragile CSS selectors)
+	 * - Parses transaction rows directly from innerText (robust to DOM changes)
+	 * - Allows legitimate duplicate transactions (same date/payee/amount on different days)
+	 * - Deduplicates by element ID to prevent re-processing
 	 */
 
 	function cleanAmount(str) {
@@ -38,18 +40,18 @@ javascript: (() => {
 		return `${year}-${month}-${day}`;
 	}
 
-	// Find the main feed container: grandparent of the first date h2.
-	// "Today" lives in an h2 inside a header div; all other dates are plain sibling divs.
-	const firstH2 = [...document.querySelectorAll("h2")].find((h) =>
+	// Find the main feed container: grandparent of the first date header.
+	// "Today" lives in an h3 inside a header div; all other dates are plain sibling divs.
+	const firstHeading = [...document.querySelectorAll("h1, h2, h3, h4, h5, h6")].find((h) =>
 		/Today|Yesterday|\d/.test(h.innerText),
 	);
-	if (!firstH2) {
+	if (!firstHeading) {
 		alert(
 			"Could not find activity feed.\nMake sure you are on the Activity page at my.wealthsimple.com/activity",
 		);
 		return;
 	}
-	const container = firstH2.parentElement.parentElement;
+	const container = firstHeading.parentElement.parentElement;
 
 	const rows = [];
 	const seen = new Set();
@@ -59,8 +61,8 @@ javascript: (() => {
 		const text = child.innerText && child.innerText.trim();
 		if (!text) continue;
 
-		// Date header: "Today" has an h2 inside its container div; other dates are plain divs
-		const h2 = child.querySelector("h2");
+		// Date header: "Today" has a heading inside its container div; other dates are plain divs
+		const h2 = child.querySelector("h1, h2, h3, h4, h5, h6");
 		const dateText = h2 ? h2.innerText.trim() : text;
 		if (
 			/^(Today|Yesterday)$/.test(dateText) ||
@@ -74,9 +76,10 @@ javascript: (() => {
 		if (!currentDate || !text.includes("CAD") || text.includes("Pending"))
 			continue;
 
-		// Transaction innerText format: "Payee\n\nType\n\nAccount\n\nAmount CAD\n\n..."
+		// Transaction innerText format: "Payee[newline(s)]Type[newline(s)]Account[newline(s)]Amount CAD..."
+		// Parser handles single or multiple consecutive newlines via /\n+/ regex
 		const parts = text
-			.split("\n\n")
+			.split(/\n+/)
 			.map((s) => s.trim())
 			.filter(Boolean);
 		const payee = parts[0];
@@ -86,7 +89,11 @@ javascript: (() => {
 		const amount = cleanAmount(amountPart);
 		if (Number.isNaN(amount)) continue;
 
-		const uid = currentDate + payee + amount;
+		// Include button element ID to uniquely identify each transaction and allow
+		// legitimate duplicate transactions (same date/payee/amount) to both be exported
+		const button = child.querySelector('button[id]');
+		const buttonId = button?.id || '';
+		const uid = currentDate + payee + amount + buttonId;
 		if (!seen.has(uid)) {
 			seen.add(uid);
 			rows.push(
