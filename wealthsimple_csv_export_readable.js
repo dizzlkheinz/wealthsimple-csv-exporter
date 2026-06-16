@@ -1,20 +1,23 @@
+// biome-ignore lint/suspicious/noConfusingLabels: leading "javascript:" is the bookmarklet scheme prefix, not a JS label
 javascript: (() => {
 	/*
 	 * Wealthsimple Transaction Export Bookmarklet
-	 * Version: 0.2.0
+	 * Version: 0.3.0
 	 * Features:
 	 * - Exports to CSV (Date, Payee, Amount)
 	 * - Formats Date as YYYY-MM-DD (compatible with YNAB/Excel)
 	 * - Skips "Pending" transactions
-	 * - Handles "Today"/"Yesterday" and standard dates
-	 * - Parses transaction rows directly from innerText (no fragile CSS selectors)
+	 * - Handles "Today"/"Yesterday" and "Month D, YYYY" dates
+	 * - Locates the activity feed by structure (the element with the most
+	 *   "$… CAD" rows) instead of by <h2> tags or styled-component class
+	 *   names, so it survives Wealthsimple's frequent markup redesigns.
 	 */
 
 	function cleanAmount(str) {
 		// Normalize various minus/dash characters, remove commas, strip non-numeric
 		return parseFloat(
 			str
-				.replace(/[−\u2212\u2013\u2014]/g, "-")
+				.replace(/[−–—―]/g, "-")
 				.replace(/,/g, "")
 				.replace(/[^\d.-]/g, ""),
 		);
@@ -38,45 +41,58 @@ javascript: (() => {
 		return `${year}-${month}-${day}`;
 	}
 
-	// Find the main feed container: grandparent of the first date h2.
-	// "Today" lives in an h2 inside a header div; all other dates are plain sibling divs.
-	const firstH2 = [...document.querySelectorAll("h2")].find((h) =>
-		/Today|Yesterday|\d/.test(h.innerText),
-	);
-	if (!firstH2) {
+	// A date header is "Today", "Yesterday", or "Month D" / "Month D, YYYY".
+	const DATE_RE = /^(Today|Yesterday|[A-Z][a-z]+ \d{1,2}(?:, \d{4})?)$/;
+	// A transaction block always shows its amount as "$… CAD".
+	const hasAmount = (t) => t.includes("CAD") && t.includes("$");
+
+	// Find the feed without relying on tag names or CSS classes: it is the
+	// element that has the most direct children which look like transaction
+	// rows (each containing a "$… CAD" amount). Date headers sit between the
+	// rows as siblings and carry no amount, so they don't affect the count.
+	let feed = null;
+	let bestCount = 0;
+	for (const el of document.querySelectorAll("div")) {
+		let count = 0;
+		for (const child of el.children) {
+			if (hasAmount(child.innerText || "")) count++;
+		}
+		if (count > bestCount) {
+			bestCount = count;
+			feed = el;
+		}
+	}
+
+	if (!feed) {
 		alert(
-			"Could not find activity feed.\nMake sure you are on the Activity page at my.wealthsimple.com/activity",
+			"Could not find the activity feed.\n\n" +
+				"Make sure you are on the Activity page at my.wealthsimple.com/activity " +
+				"and have scrolled down to load some transactions.",
 		);
 		return;
 	}
-	const container = firstH2.parentElement.parentElement;
 
 	const rows = [];
 	const seen = new Set();
 	let currentDate = null;
 
-	for (const child of container.children) {
-		const text = child.innerText && child.innerText.trim();
+	for (const child of feed.children) {
+		const text = (child.innerText || "").trim();
 		if (!text) continue;
 
-		// Date header: "Today" has an h2 inside its container div; other dates are plain divs
-		const h2 = child.querySelector("h2");
-		const dateText = h2 ? h2.innerText.trim() : text;
-		if (
-			/^(Today|Yesterday)$/.test(dateText) ||
-			/^\w+ \d{1,2}, \d{4}$/.test(dateText)
-		) {
-			currentDate = formatDate(dateText);
+		// Date header: first line matches a date and the block has no amount.
+		const firstLine = text.split("\n")[0].trim();
+		if (DATE_RE.test(firstLine) && !hasAmount(text)) {
+			currentDate = formatDate(firstLine);
 			continue;
 		}
 
-		// Transaction row: must have a current date, contain CAD, and not be Pending
-		if (!currentDate || !text.includes("CAD") || text.includes("Pending"))
-			continue;
+		// Transaction row: needs a known date, an amount, and must not be Pending.
+		if (!currentDate || !hasAmount(text) || /pending/i.test(text)) continue;
 
-		// Transaction innerText format: "Payee\n\nType\n\nAccount\n\nAmount CAD\n\n..."
+		// innerText layout: "Payee\n\nType\n\nAccount\n\nAmount CAD"
 		const parts = text
-			.split("\n\n")
+			.split("\n")
 			.map((s) => s.trim())
 			.filter(Boolean);
 		const payee = parts[0];
@@ -97,14 +113,10 @@ javascript: (() => {
 
 	if (rows.length === 0) {
 		const url = window.location.href;
-		const dollarCount = (document.body.innerText.match(/\$/g) || []).length;
 		let msg = "No completed transactions found.\n\n";
 		if (!url.includes("wealthsimple.com")) {
 			msg +=
 				"You don't appear to be on Wealthsimple.\nNavigate to my.wealthsimple.com/activity first.";
-		} else if (dollarCount === 0) {
-			msg +=
-				"No dollar amounts found on page.\nMake sure you're on the Activity page.";
 		} else {
 			msg +=
 				"Tip: Scroll down to load more transactions before clicking.\n\n" +
