@@ -62,6 +62,21 @@ Date,Payee,Amount
 - The bookmarklet only reads visible transaction data
 - Source code is fully visible in `wealthsimple_csv_export_readable.js`
 
+## Changelog
+
+### 0.3.0
+
+- **Fixed**: Rebuilt the scraper for Wealthsimple's latest activity-feed redesign. Date headers are no longer `<h2>` tags (the only remaining `<h2>` is "Filters"), which broke the previous version with a "Could not find activity feed" error. The feed is now located structurally — the element with the most `$… CAD` transaction rows — instead of by tag name or CSS class, so it should survive future markup redesigns.
+- **Changed**: Migrated the Biome config to the v2 schema (the stale config had stopped the linter from running) and formatted `package.json`.
+
+### 0.2.0
+
+- **Fixed**: Updated the bookmarklet for an earlier site redesign — date headers and transactions became flat sibling elements, so parsing now reads transaction data directly from `innerText`.
+
+### 0.1.0
+
+- Initial release: one-click CSV export of activity (Date, Payee, Amount), `YYYY-MM-DD` dates, skips pending transactions, and normalizes negative-sign symbols.
+
 ## Contributing
 
 Found a bug or have a feature request? Open an issue or submit a pull request!
